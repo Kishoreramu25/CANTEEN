@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Canteen Ordering System</title>
+    <!-- Google Fonts: Poppins -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet">
+    <!-- Font Awesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="style.css">
+    <!-- jsPDF Library -->
+    <script src="js/jspdf.umd.min.js"></script>
+    <script src="js/jspdf.plugin.autotable.min.js"></script>
+</head>
+
+<body>
+
+    <header>
+        <div class="container header-content">
+            <div class="nav-left">
+                <button id="header-back-btn" class="header-back-btn" style="display: none;">
+                    <i class="fa-solid fa-arrow-left"></i>
+                </button>
+                <div class="logo">
+                    <i class="fa-solid fa-utensils"></i>
+                    <h1>Esec GK Foods</h1>
+                </div>
+            </div>
+            <!-- Progress Steps (Visible on larger screens) -->
+            <div class="steps-indicator">
+                <div class="step active" data-step="1">1. Menu</div>
+                <div class="step" data-step="2">2. Cart</div>
+                <div class="step" data-step="3">3. Pay</div>
+                <div class="step" data-step="4">4. Details</div>
+                <div class="step" data-step="5">5. Done</div>
+            </div>
+            <div class="cart-icon-wrapper" onclick="goToStep(2)">
+                <i class="fa-solid fa-cart-shopping"></i>
+                <span id="cart-count" class="badge">0</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="container main-layout">
+
+        <!-- STEP 1: MENU -->
+        <section id="step-menu" class="step-section active">
+            <div class="section-header">
+                <h2>Delicious Snacks</h2>
+                <p class="subtitle">Freshly prepared for you</p>
+            </div>
+            <div id="snacks-grid" class="grid">
+                <!-- Snack cards injected by JS -->
+            </div>
+            <div class="floating-action" id="view-cart-btn-wrapper" style="display: none;">
+                <button class="btn-primary" onclick="goToStep(2)">
+                    View Cart <i class="fa-solid fa-arrow-right"></i>
+                </button>
+            </div>
+        </section>
+
+        <!-- STEP 2: CART -->
+        <section id="step-cart" class="step-section" style="display: none;">
+            <div class="section-header">
+                <h2>Your Cart</h2>
+            </div>
+            <div class="cart-container-full">
+                <div id="cart-items" class="cart-items">
+                    <!-- Cart items injected by JS -->
+                </div>
+
+                <div class="cart-summary-footer">
+                    <div class="summary-row total">
+                        <span>Total Amount:</span>
+                        <span id="cart-total-price">₹0</span>
+                    </div>
+                    <button class="btn-primary" onclick="goToStep(3)" id="checkout-btn" disabled>
+                        Proceed to Payment <i class="fa-solid fa-credit-card"></i>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- STEP 3: PAYMENT -->
+        <section id="step-payment" class="step-section" style="display: none;">
+            <div class="section-header">
+                <h2>Make Payment</h2>
+            </div>
+
+            <div class="payment-container">
+
+                <!-- UPI Intent Section -->
+                <div class="upi-card">
+                    <div class="payment-summary">
+                        <p>Total Payable</p>
+                        <h1 id="pay-amount-display">₹0</h1>
+                    </div>
+
+                    <button class="btn-upi" onclick="triggerUPIPayment()">
+                        <div class="upi-icons">
+                            <i class="fa-brands fa-google-pay"></i>
+                            <i class="fa-solid fa-mobile-screen-button"></i>
+                        </div>
+                        <span>Pay via UPI App</span>
+                    </button>
+
+                    <p class="upi-help-text">
+                        Click above to open GPay, PhonePe, Paytm, etc.<br>
+                        <span class="small-muted">Ensure you have a UPI app installed.</span>
+                    </p>
+                </div>
+
+                <div class="divider">
+                    <span>OR</span>
+                </div>
+
+                <!-- Manual Upload Section -->
+                <div class="upload-section">
+                    <p class="upload-instruction">After payment, upload the screenshot below:</p>
+                    <label for="payment-screenshot" class="upload-label">
+                        <i class="fa-solid fa-cloud-arrow-up"></i>
+                        <span>Upload Payment Screenshot</span>
+                        <small>Required for verification</small>
+                    </label>
+                    <input type="file" id="payment-screenshot" accept="image/*" onchange="handleFileUpload(this)">
+                    <div id="file-preview" class="file-preview" style="display: none;">
+                        <img id="preview-img" src="" alt="Payment Screenshot">
+                        <p id="file-name"></p>
+                    </div>
+                </div>
+
+                <button class="btn-primary" onclick="validatePaymentAndProceed()">
+                    Next: Enter Details <i class="fa-solid fa-arrow-right"></i>
+                </button>
+            </div>
+        </section>
+
+        <!-- STEP 4: USER DETAILS -->
+        <section id="step-details" class="step-section" style="display: none;">
+            <div class="section-header">
+                <h2>Confirm Details</h2>
+            </div>
+
+            <div class="details-form-container">
+                <div class="alert-box">
+                    <i class="fa-solid fa-circle-info"></i>
+                    <p>Ensure the <strong>Transaction ID</strong> below matches the one in your uploaded screenshot.</p>
+                </div>
+
+                <form id="details-form" onsubmit="handleFinalSubmit(event)">
+                    <div class="form-group">
+                        <label for="student-name">Full Name <span class="required">*</span></label>
+                        <input type="text" id="student-name" placeholder="e.g. John Doe" required>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="roll-number">Roll Number <span class="required">*</span></label>
+                            <input type="text" id="roll-number" placeholder="e.g. 21CS001" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="department">Department <span class="required">*</span></label>
+                            <select id="department" required>
+                                <option value="" disabled selected>Select Dept</option>
+                                <option value="CSE">CSE</option>
+                                <option value="IT">IT</option>
+                                <option value="ECE">ECE</option>
+                                <option value="EEE">EEE</option>
+                                <option value="MECH">MECH</option>
+                                <option value="CIVIL">CIVIL</option>
+                                <option value="MBA">MBA</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="transaction-id">Transaction ID <span class="required">*</span></label>
+                        <input type="text" id="transaction-id" placeholder="e.g. UPI1234567890" required>
+                    </div>
+
+                    <button type="submit" class="btn-primary">
+                        <i class="fa-solid fa-check-circle"></i> Verify & Place Order
+                    </button>
+                </form>
+            </div>
+        </section>
+
+        <!-- STEP 5: SUCCESS -->
+        <section id="step-success" class="step-section" style="display: none; text-align: center;">
+            <div class="success-card">
+                <div class="success-icon">
+                    <i class="fa-solid fa-check"></i>
+                </div>
+                <h2>Order Placed Successfully!</h2>
+                <p>Your order has been received. Please download your receipt.</p>
+
+                <div class="order-info-box">
+                    <p><strong>Order ID:</strong> <span id="success-order-id">...</span></p>
+                    <p><strong>Status:</strong> <span class="status-badge">Paid - Pending Pickup</span></p>
+                </div>
+
+                <button class="btn-primary" onclick="downloadBill()">
+                    <i class="fa-solid fa-download"></i> Download Receipt
+                </button>
+
+                <br><br>
+                <button class="btn-secondary" onclick="location.reload()">Place New Order</button>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast">Item added to cart!</div>
+
+    <script src="script.js"></script>
+</body>
+
+</html>
