@@ -271,7 +271,7 @@ function updateCartUI() {
 }
 
 // Payment Logic
-const UPI_ID = "canteen@upi"; // REPLACE WITH ACTUAL UPI ID
+const UPI_ID = "ramkisho28@okhdfcbank"; // REPLACE WITH ACTUAL UPI ID
 
 window.triggerUPIPayment = function () {
     const totalAmount = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
