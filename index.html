@@ -95,26 +95,27 @@
                 <h2>Make Payment</h2>
             </div>
 
-            <div class="payment-container">
-
-                <!-- UPI Intent Section -->
-                <div class="payment-summary">
-                    <p>Total Payable</p>
-                    <h1 id="pay-amount-display">₹0</h1>
+            <div class="premium-payment-container">
+                <div class="premium-header">
+                    <p class="total-label">Total Payable Amount</p>
+                    <h1 id="pay-amount-display" class="amount-display">₹0</h1>
                 </div>
 
-                <button class="btn-upi" onclick="payWithRazorpay()"
-                    style="background-color: #3399cc; color: white; border: none; margin-top: 1rem;">
-                    <div class="upi-icons">
+                <div class="payment-actions">
+                    <button class="razorpay-premium-btn" onclick="payWithRazorpay()">
                         <i class="fa-solid fa-credit-card"></i>
-                    </div>
-                    <span>Pay with Razorpay</span>
-                </button>
+                        <span>Pay Securely with Razorpay</span>
+                    </button>
 
-                <p class="upi-help-text" style="margin-top: 1rem;">
-                    Click above to pay securely.<br>
-                    <span class="small-muted">Supports UPI, Cards, Netbanking.</span>
-                </p>
+                    <div class="secure-badge">
+                        <i class="fa-solid fa-lock"></i>
+                        <span>256-bit SSL Encrypted Payment</span>
+                    </div>
+                </div>
+
+                <div style="margin-top: 1.5rem; color: #9ca3af; font-size: 0.8rem;">
+                    <p>Powered by Razorpay trusted by millions.</p>
+                </div>
             </div>
 
 
