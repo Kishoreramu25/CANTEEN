@@ -3,84 +3,84 @@ const snacks = [
     {
         id: 1,
         name: "Sprite (Cool drinks)",
-        price: 15.30, // 15 + 2%
+        price: 15,
         description: "Chilled soft drink",
         image: "images/sprite.png"
     },
     {
         id: 2,
         name: "Frooty",
-        price: 20.40, // 20 + 2%
+        price: 20,
         description: "Mango drink",
         image: "images/frooty.png"
     },
     {
         id: 3,
         name: "Coca Cola",
-        price: 15.30, // 15 + 2%
+        price: 15,
         description: "Cold fizzy drink",
         image: "images/cocacola.png"
     },
     {
         id: 4,
         name: "Veg Puffs",
-        price: 30.60, // 30 + 2%
+        price: 30,
         description: "Crispy bakery puff",
         image: "images/puffs.jpg"
     },
     {
         id: 5,
         name: "Egg Roll",
-        price: 25.50, // 25 + 2%
+        price: 25,
         description: "Egg roll with spices",
         image: "images/eggroll.jpg"
     },
     {
         id: 6,
         name: "Pani Puri",
-        price: 30.60, // 30 + 2%
+        price: 30,
         description: "Street style pani puri",
         image: "images/panipuri.jpg"
     },
     {
         id: 7,
         name: "Chicken Rice",
-        price: 81.60, // 80 + 2%
+        price: 80,
         description: "Chicken fried rice",
         image: "images/chickenrice.jpg"
     },
     {
         id: 8,
         name: "Egg Rice",
-        price: 71.40, // 70 + 2%
+        price: 70,
         description: "Egg fried rice",
         image: "images/eggrice.jpg"
     },
     {
         id: 9,
         name: "Parotta",
-        price: 15.30, // 15 + 2%
+        price: 15,
         description: "Soft layered parotta",
         image: "images/parotta.jpg"
     },
     {
         id: 10,
         name: "Chilli Parotta",
-        price: 81.60, // 80 + 2%
+        price: 80,
         description: "Spicy chilli parotta",
         image: "images/chilliparotta.jpg"
     },
     {
         id: 11,
         name: "Cream Bun",
-        price: 15.30, // 15 + 2%
+        price: 15,
         description: "Sweet cream bun",
         image: "images/creambun.jpg"
     },
     {
         id: 12,
         name: "Jam Bun",
-        price: 15.30, // 15 + 2%
+        price: 15,
         description: "Jam-filled bun",
         image: "images/jambun.jpg"
     }
@@ -90,7 +90,6 @@ const snacks = [
 // State
 let cart = [];
 let currentStep = 1;
-let paymentScreenshot = null;
 let lastOrderData = null;
 
 // DOM Elements
@@ -271,47 +270,95 @@ function updateCartUI() {
 }
 
 // Payment Logic
-const UPI_ID = "ramkisho28@okhdfcbank"; // REPLACE WITH ACTUAL UPI ID
+const UPI_ID = "ramkisho28@okhdfcbank";
 
-window.triggerUPIPayment = function () {
+async function payWithRazorpay() {
     const totalAmount = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
     if (totalAmount === 0) {
         showToast("Cart is empty!");
         return;
     }
 
-    // UPI Deep Link
-    const upiUrl = `upi://pay?pa=${UPI_ID}&pn=Campus Canteen&am=${totalAmount}&cu=INR&tn=Canteen Payment`;
+    // 1. Create Order
+    try {
+        const response = await fetch('/create-order', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ amount: totalAmount })
+        });
+        const order = await response.json();
 
-    // Attempt to open UPI app
-    window.location.href = upiUrl;
+        if (!order || !order.id) {
+            alert("Failed to create order. Please try again.");
+            return;
+        }
 
-    showToast("Opening UPI App...");
-};
-
-window.handleFileUpload = function (input) {
-    if (input.files && input.files[0]) {
-        const file = input.files[0];
-        const reader = new FileReader();
-
-        reader.onload = function (e) {
-            document.getElementById('preview-img').src = e.target.result;
-            document.getElementById('file-preview').style.display = 'block';
-            document.getElementById('file-name').textContent = file.name;
-            paymentScreenshot = file;
+        // 2. Options for Checkout
+        const options = {
+            "key": "rzp_test_S159syeQZthVOQ", // Enter the Key ID generated from the Dashboard
+            "amount": order.amount,
+            "currency": "INR",
+            "name": "Esec GK Foods",
+            "description": "Canteen Order",
+            "image": "images/logo.png", // Ensure you have a logo or remove this line
+            "order_id": order.id,
+            "handler": async function (response) {
+                // 3. Verify Payment
+                await verifyPayment(response);
+            },
+            "prefill": {
+                "name": "", // We can prefill if we asked for details earlier
+                "email": "",
+                "contact": ""
+            },
+            "theme": {
+                "color": "#3399cc"
+            }
         };
 
-        reader.readAsDataURL(file);
-    }
-};
+        const rzp1 = new Razorpay(options);
+        rzp1.on('payment.failed', function (response) {
+            alert("Payment Failed: " + response.error.description);
+        });
+        rzp1.open();
 
-window.validatePaymentAndProceed = function () {
-    if (!paymentScreenshot) {
-        alert("Please upload the payment screenshot to proceed.");
-        return;
+    } catch (err) {
+        console.error("Error initiating payment:", err);
+        alert("Error connecting to payment server.");
     }
-    goToStep(4);
-};
+}
+
+async function verifyPayment(paymentData) {
+    try {
+        const response = await fetch('/verify-payment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(paymentData)
+        });
+        const result = await response.json();
+
+        if (result.success) {
+            // Success! Move to Details Step or Auto-Submit
+            // Note: Original flow goes 1->2->3(Payment)->4(Details)->5(Success)
+            // We can allow user to fill details now or just move to step 4.
+            // Since the original flow asks for details in Step 4, we should go there.
+            // However, we might want to pass the transaction ID automatically.
+
+            document.getElementById('transaction-id').value = paymentData.razorpay_payment_id;
+            document.getElementById('transaction-id').readOnly = true; // Lock it
+
+            showToast("Payment Successful!");
+            goToStep(4);
+        } else {
+            alert("Payment Verification Failed!");
+        }
+    } catch (err) {
+        console.error("Verification Error:", err);
+        alert("Error verifying payment.");
+    }
+}
+
+// Manual payment functions removed. Now using Razorpay only.
 
 // Final Submission
 window.handleFinalSubmit = function (e) {

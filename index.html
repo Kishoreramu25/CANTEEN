@@ -17,6 +17,8 @@
     <!-- jsPDF Library -->
     <script src="js/jspdf.umd.min.js"></script>
     <script src="js/jspdf.plugin.autotable.min.js"></script>
+    <!-- Razorpay Checkout -->
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 </head>
 
 <body>
@@ -96,48 +98,26 @@
             <div class="payment-container">
 
                 <!-- UPI Intent Section -->
-                <div class="upi-card">
-                    <div class="payment-summary">
-                        <p>Total Payable</p>
-                        <h1 id="pay-amount-display">₹0</h1>
+                <div class="payment-summary">
+                    <p>Total Payable</p>
+                    <h1 id="pay-amount-display">₹0</h1>
+                </div>
+
+                <button class="btn-upi" onclick="payWithRazorpay()"
+                    style="background-color: #3399cc; color: white; border: none; margin-top: 1rem;">
+                    <div class="upi-icons">
+                        <i class="fa-solid fa-credit-card"></i>
                     </div>
-
-                    <button class="btn-upi" onclick="triggerUPIPayment()">
-                        <div class="upi-icons">
-                            <i class="fa-brands fa-google-pay"></i>
-                            <i class="fa-solid fa-mobile-screen-button"></i>
-                        </div>
-                        <span>Pay via UPI App</span>
-                    </button>
-
-                    <p class="upi-help-text">
-                        Click above to open GPay, PhonePe, Paytm, etc.<br>
-                        <span class="small-muted">Ensure you have a UPI app installed.</span>
-                    </p>
-                </div>
-
-                <div class="divider">
-                    <span>OR</span>
-                </div>
-
-                <!-- Manual Upload Section -->
-                <div class="upload-section">
-                    <p class="upload-instruction">After payment, upload the screenshot below:</p>
-                    <label for="payment-screenshot" class="upload-label">
-                        <i class="fa-solid fa-cloud-arrow-up"></i>
-                        <span>Upload Payment Screenshot</span>
-                        <small>Required for verification</small>
-                    </label>
-                    <input type="file" id="payment-screenshot" accept="image/*" onchange="handleFileUpload(this)">
-                    <div id="file-preview" class="file-preview" style="display: none;">
-                        <img id="preview-img" src="" alt="Payment Screenshot">
-                        <p id="file-name"></p>
-                    </div>
-                </div>
-
-                <button class="btn-primary" onclick="validatePaymentAndProceed()">
-                    Next: Enter Details <i class="fa-solid fa-arrow-right"></i>
+                    <span>Pay with Razorpay</span>
                 </button>
+
+                <p class="upi-help-text" style="margin-top: 1rem;">
+                    Click above to pay securely.<br>
+                    <span class="small-muted">Supports UPI, Cards, Netbanking.</span>
+                </p>
+            </div>
+
+
             </div>
         </section>
 
