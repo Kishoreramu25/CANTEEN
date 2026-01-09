@@ -13,11 +13,22 @@ app.use(express.json());
 app.use(cors());
 app.use(express.static(path.join(__dirname))); // Serve static files from current directory
 
-// Razorpay Instance
-const razorpay = new Razorpay({
-    key_id: process.env.RAZORPAY_KEY_ID,
-    key_secret: process.env.RAZORPAY_KEY_SECRET
+// Serve index.html on root
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
 });
+
+// Razorpay Instance
+// Razorpay Instance
+let razorpay;
+if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
+    razorpay = new Razorpay({
+        key_id: process.env.RAZORPAY_KEY_ID,
+        key_secret: process.env.RAZORPAY_KEY_SECRET
+    });
+} else {
+    console.warn("WARNING: Razorpay keys are missing. Payment features will fail.");
+}
 
 // Routes
 
@@ -35,6 +46,11 @@ app.post('/create-order', async (req, res) => {
             currency,
             receipt: `receipt_${Date.now()}`
         };
+
+
+        if (!razorpay) {
+            return res.status(500).json({ error: "Payment gateway not initialized" });
+        }
 
         const order = await razorpay.orders.create(options);
         res.json(order);
