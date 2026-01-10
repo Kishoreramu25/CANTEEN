@@ -273,11 +273,28 @@ function updateCartUI() {
 const UPI_ID = "ramkisho28@okhdfcbank";
 
 async function payWithRazorpay() {
+    const payBtn = document.getElementById('pay-btn');
+    const originalBtnContent = payBtn.innerHTML;
+
     const totalAmount = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
     if (totalAmount === 0) {
         showToast("Cart is empty!");
         return;
     }
+
+    // Feedback: Change Button State
+    payBtn.disabled = true;
+    payBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processing...';
+    payBtn.style.backgroundColor = '#6c757d'; // Grey out
+    payBtn.style.cursor = 'not-allowed';
+
+    // Helper to revert button
+    const revertButton = () => {
+        payBtn.disabled = false;
+        payBtn.innerHTML = originalBtnContent;
+        payBtn.style.backgroundColor = ''; // Revert to CSS default
+        payBtn.style.cursor = '';
+    };
 
     // 1. Create Order
     try {
@@ -290,6 +307,7 @@ async function payWithRazorpay() {
 
         if (!order || !order.id) {
             alert("Failed to create order. Please try again.");
+            revertButton();
             return;
         }
 
@@ -306,6 +324,11 @@ async function payWithRazorpay() {
                 // 3. Verify Payment
                 await verifyPayment(response);
             },
+            "modal": {
+                "ondismiss": function () {
+                    revertButton(); // Revert if user closes popup
+                }
+            },
             "prefill": {
                 "name": "", // We can prefill if we asked for details earlier
                 "email": "",
@@ -319,12 +342,14 @@ async function payWithRazorpay() {
         const rzp1 = new Razorpay(options);
         rzp1.on('payment.failed', function (response) {
             alert("Payment Failed: " + response.error.description);
+            revertButton();
         });
         rzp1.open();
 
     } catch (err) {
         console.error("Error initiating payment:", err);
         alert("Error connecting to payment server.");
+        revertButton();
     }
 }
 
@@ -384,13 +409,51 @@ window.handleFinalSubmit = function (e) {
         totalAmount
     };
 
-    // Show Success
+    // Show Success & Populate Receipt
     document.getElementById('success-order-id').textContent = orderId;
+
+    // --- POPULATE ON-SCREEN RECEIPT ---
+    const receiptDetails = document.getElementById('receipt-details');
+    const receiptBody = document.getElementById('receipt-items-body');
+    const receiptTotal = document.getElementById('receipt-total');
+
+    if (receiptDetails && receiptBody) {
+        // Student Info
+        receiptDetails.innerHTML = `
+            <p style="margin: 5px 0;"><strong>Name:</strong> ${name}</p>
+            <p style="margin: 5px 0;"><strong>Roll No:</strong> ${rollNo}</p>
+            <p style="margin: 5px 0;"><strong>Dept:</strong> ${dept}</p>
+            <p style="margin: 5px 0;"><strong>Date:</strong> ${date} ${time}</p>
+        `;
+
+        // Clear Items
+        receiptBody.innerHTML = '';
+
+        // Add Items
+        cart.forEach(item => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td style="padding: 5px; border-bottom: 1px solid #eee;">${item.name}</td>
+                <td style="text-align: center; padding: 5px; border-bottom: 1px solid #eee;">${item.qty}</td>
+                <td style="text-align: right; padding: 5px; border-bottom: 1px solid #eee;">₹${item.price * item.qty}</td>
+            `;
+            receiptBody.appendChild(row);
+        });
+
+        // Update Total
+        if (receiptTotal) {
+            receiptTotal.textContent = `₹${totalAmount}`;
+        }
+    }
+
     goToStep(5);
 
     // Clear Cart
     cart = [];
     updateCartUI();
+
+    // Save to Supabase
+    saveOrderToSupabase(lastOrderData);
 };
 
 window.downloadBill = function () {
@@ -615,73 +678,117 @@ function showToast(message) {
 }
 
 function generatePDF(data) {
-    console.log("Starting PDF generation with template...", data);
-
     if (!window.jspdf) {
-        alert("CRITICAL ERROR: jsPDF library is not loaded. \n\nPossible reasons:\n1. No Internet Connection\n2. Ad blocker blocking CDN\n\nPlease check your connection and refresh.");
+        alert("PDF Library not loaded. Please check connection.");
         return;
     }
 
-    // Load Template Image
     const img = new Image();
-    img.src = 'images/receipt_template.png';
+    // Prevent caching issues
+    img.src = 'images/receipt_template.png?' + new Date().getTime();
 
-    img.onload = function () {
+    let isPDFGenerated = false;
+
+    // Helper for manual download link
+    function triggerDownload(blobUrl, filename) {
+        try {
+            const a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+
+            // Add MANUAL Link Fallback
+            const successContainer = document.querySelector('.step-success');
+            if (successContainer) {
+                const existingLink = document.getElementById('manual-download-link');
+                if (existingLink) existingLink.remove();
+                const manualLink = document.createElement('a');
+                manualLink.id = 'manual-download-link';
+                manualLink.href = blobUrl;
+                manualLink.download = filename;
+                manualLink.textContent = "Click here if download didn't start";
+                manualLink.style.display = 'block';
+                manualLink.style.marginTop = '1rem';
+                manualLink.style.color = '#0d6efd';
+                manualLink.style.textDecoration = 'underline';
+                manualLink.style.textAlign = 'center';
+                successContainer.appendChild(manualLink);
+            }
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 300000);
+        } catch (e) { console.error(e); }
+    }
+
+    function createPDF(useImage) {
+        if (isPDFGenerated) return;
+        isPDFGenerated = true;
+
         try {
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF();
 
             if (typeof doc.autoTable !== 'function') {
-                alert("CRITICAL ERROR: jsPDF-AutoTable plugin is not loaded.\n\nPlease check your connection and refresh.");
+                alert("PDF Table plugin missing.");
                 return;
             }
 
-            // --- Constants & Config ---
             const pageWidth = doc.internal.pageSize.width;
             const pageHeight = doc.internal.pageSize.height;
             const margin = 20;
             const centerX = pageWidth / 2;
-            let y = 70; // Start lower to avoid the "ZENETIVE INFOTECH" header in the image
-
-            // --- Add Template Background ---
-            doc.addImage(img, 'PNG', 0, 0, pageWidth, pageHeight);
+            let y = 70; // Default start Y for image template
 
             // --- Helper: Centered Text ---
             const centerText = (text, yPos) => {
                 doc.text(text, centerX, yPos, { align: 'center' });
             };
 
-            // --- Title (Optional, if not in template) ---
-            // doc.setFont("helvetica", "bold");
-            // doc.setFontSize(16);
-            // doc.setTextColor(0, 51, 153); 
-            // centerText("DIGITAL RECEIPT", y);
-            // y += 10;
+            // Add Image if available and loaded
+            if (useImage) {
+                try {
+                    doc.addImage(img, 'PNG', 0, 0, pageWidth, pageHeight);
+                } catch (err) {
+                    console.log("Image add failed, proceeding without it.");
+                    // Reset Y if no image (since image has header)
+                    y = 20;
+                    doc.setFont("helvetica", "bold");
+                    doc.setFontSize(20);
+                    doc.setTextColor(0, 0, 0);
+                    centerText("COLLEGE CANTEEN", y);
+                    y += 15;
+                }
+            } else {
+                // Fallback Header
+                y = 20;
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(20);
+                doc.setTextColor(0, 0, 0);
+                centerText("COLLEGE CANTEEN", y);
+                y += 15;
+            }
 
-            // --- Order & Payment Info ---
+            // --- Common PDF Content Construction ---
+            const leftColX = margin;
+
+            // Order & Payment Info
             doc.setFont("helvetica", "normal");
             doc.setFontSize(10);
             doc.setTextColor(0, 0, 0);
 
-            const leftColX = margin;
-
-            // Order ID
             doc.text(`Order ID: ${data.orderId}`, leftColX, y);
             y += 6;
-            // Payment ID (Transaction ID)
             doc.text(`Payment ID: ${data.txnId}`, leftColX, y);
             y += 6;
-            // Payment Status
             doc.text(`Payment Status: PAID`, leftColX, y);
-            doc.setTextColor(0, 128, 0); // Green check
-            doc.text(" \u2714", leftColX + 35, y); // Checkmark
-            doc.setTextColor(0, 0, 0); // Reset
+            doc.setTextColor(0, 128, 0);
+            doc.text(" \u2714", leftColX + 35, y);
+            doc.setTextColor(0, 0, 0);
             y += 6;
-            // Paid On
             doc.text(`Paid On: ${data.date}, ${data.time}`, leftColX, y);
             y += 15;
 
-            // --- Student Details ---
+            // Student Details
             doc.setFont("helvetica", "bold");
             doc.text("Student Details", leftColX, y);
             y += 6;
@@ -693,10 +800,12 @@ function generatePDF(data) {
             doc.text(`Department: ${data.dept}`, leftColX, y);
             y += 15;
 
-            // --- Items Table ---
+
+            // Items Table
+
             doc.setFont("helvetica", "bold");
             doc.text("Items", leftColX, y);
-            y += 2; // Spacing before table
+            y += 2;
 
             const tableColumn = ["Product Name", "Quantity", "Price", "Total"];
             const tableRows = [];
@@ -718,7 +827,7 @@ function generatePDF(data) {
                 startY: y,
                 theme: 'plain',
                 styles: { fontSize: 10, cellPadding: 2 },
-                headStyles: { fillColor: [0, 114, 255], textColor: 255, fontStyle: 'bold' }, // Blue header to match template
+                headStyles: { fillColor: [0, 114, 255], textColor: 255, fontStyle: 'bold' },
                 columnStyles: {
                     0: { cellWidth: 'auto' },
                     1: { cellWidth: 20, halign: 'center' },
@@ -730,18 +839,16 @@ function generatePDF(data) {
 
             y = doc.lastAutoTable.finalY + 5;
 
-            // --- Calculations ---
+            // Totals
             const totalPaid = data.totalAmount;
             const subtotal = totalPaid / 1.02;
             const tax = totalPaid - subtotal;
 
-            // Draw lines for totals
             doc.setLineWidth(0.5);
             doc.line(margin, y, pageWidth - margin, y);
             y += 6;
 
             const valX = pageWidth - margin;
-
             doc.setFont("helvetica", "normal");
             doc.text("Subtotal", 120, y);
             doc.text(`Rs. ${subtotal.toFixed(2)}`, valX, y, { align: 'right' });
@@ -756,23 +863,19 @@ function generatePDF(data) {
             doc.text(`Rs. ${totalPaid.toFixed(2)}`, valX, y, { align: 'right' });
             y += 15;
 
-            // --- Footer ---
+            // Footer
             doc.setFont("helvetica", "bold");
             doc.setFontSize(12);
             doc.setTextColor(0, 0, 0);
             centerText("COLLEGE CANTEEN – PAID", y);
 
-            // --- Save/View PDF ---
+            // Save/Download Logic
             const cleanOrderId = data.orderId ? data.orderId.replace(/[^a-z0-9]/gi, '_') : 'Order';
             const filename = `${cleanOrderId}_Receipt.pdf`;
-
-            console.log("Generated Filename:", filename);
-
             const blob = doc.output('blob');
             const blobUrl = URL.createObjectURL(blob);
 
-            // --- Mobile Share (Best for iOS/Android) ---
-            // Try to use native sharing if available (works best on mobile)
+            // Trigger Download / Share
             const file = new File([blob], filename, { type: 'application/pdf' });
             if (navigator.canShare && navigator.canShare({ files: [file] })) {
                 navigator.share({
@@ -780,40 +883,315 @@ function generatePDF(data) {
                     title: 'Canteen Receipt',
                     text: `Receipt for Order ${data.orderId}`
                 }).catch((err) => {
-                    console.log("Share failed or canceled:", err);
-                    // Fallback to normal download if share fails
-                    triggerDownload();
+                    console.log("Share failed:", err);
+                    triggerDownload(blobUrl, filename);
                 });
             } else {
-                triggerDownload();
+                triggerDownload(blobUrl, filename);
             }
 
-            function triggerDownload() {
-                // 1. Open in New Tab (Backup for viewing)
-                const newWindow = window.open(blobUrl, '_blank');
-                if (!newWindow) {
-                    // console.log("Popup blocked");
-                }
-
-                // 2. Trigger Download (Standard)
-                const a = document.createElement('a');
-                a.href = blobUrl;
-                a.download = filename;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-            }
-
-            // Cleanup
-            setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
-
-        } catch (err) {
-            console.error("PDF Generation Error:", err);
-            alert("Failed to generate PDF. Please try again.");
+        } catch (e) {
+            console.error(e);
+            alert("Error generating PDF: " + e.message);
         }
+    }
+
+    // --- TIMEOUT PROTECTION ---
+    // If image takes too long (>3s), proceed without it
+    const timeout = setTimeout(() => {
+        console.log("Image load timeout, generating plain PDF");
+        createPDF(false);
+    }, 3000);
+
+    img.onload = function () {
+        clearTimeout(timeout);
+        createPDF(true);
     };
 
     img.onerror = function () {
-        alert("Error loading receipt template image. Please check if 'images/receipt_template.png' exists.");
+        clearTimeout(timeout);
+        // alert("Warning: Receipt template image failed to load. Generating plain receipt.");
+        createPDF(false);
     };
 }
+
+// ---------------------------------------------------------
+// SUPABASE & ADMIN DASHBOARD LOGIC
+// ---------------------------------------------------------
+
+const SUPABASE_URL = 'https://xzwvlizzccjimzqvrlbt.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_ZZBPvPQ_yI2EMImTKxyk9g_TwDUoETC';
+let supabaseClient = null;
+
+// Initialize Supabase
+if (window.supabase) {
+    try {
+        supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        console.log("Supabase initialized");
+    } catch (e) {
+        console.error("Supabase init failed:", e);
+    }
+} else {
+    // Retry once in case of race condition
+    window.addEventListener('load', () => {
+        if (window.supabase) {
+            try {
+                supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+                console.log("Supabase initialized (delayed)");
+            } catch (e) {
+                console.error("Supabase init failed:", e);
+            }
+        } else {
+            console.error("Supabase SDK not loaded");
+        }
+    });
+}
+
+// --- DOM Elements for Admin ---
+const adminLoginBtn = document.getElementById('admin-login-btn');
+const adminLoginModal = document.getElementById('admin-login-modal');
+const closeAdminLoginBtn = document.getElementById('close-admin-login');
+const adminLoginForm = document.getElementById('admin-login-form');
+const adminDashboardSection = document.getElementById('admin-dashboard-section');
+const adminLogoutBtn = document.getElementById('admin-logout-btn');
+const ordersContainer = document.getElementById('orders-container');
+const loginErrorMsg = document.getElementById('login-error');
+
+// --- Event Listeners ---
+
+// Open Login Modal
+if (adminLoginBtn) {
+    adminLoginBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        // Check if already logged in
+        checkSession().then(session => {
+            if (session) {
+                openDashboard();
+            } else {
+                adminLoginModal.classList.remove('hidden');
+            }
+        });
+    });
+}
+
+// Close Login Modal
+if (closeAdminLoginBtn) {
+    closeAdminLoginBtn.addEventListener('click', () => {
+        adminLoginModal.classList.add('hidden');
+        loginErrorMsg.classList.add('hidden');
+    });
+}
+
+// Handle Login Submit
+if (adminLoginForm) {
+    adminLoginForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const email = document.getElementById('admin-email').value;
+        const password = document.getElementById('admin-password').value;
+        const submitBtn = adminLoginForm.querySelector('button[type="submit"]');
+
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Signing In...";
+        loginErrorMsg.classList.add('hidden');
+
+        try {
+            const { data, error } = await supabaseClient.auth.signInWithPassword({
+                email: email,
+                password: password,
+            });
+
+            if (error) throw error;
+
+            // Success
+            adminLoginModal.classList.add('hidden');
+            adminLoginForm.reset();
+            openDashboard();
+
+        } catch (err) {
+            console.error("Login failed:", err);
+            loginErrorMsg.textContent = err.message || "Invalid credentials";
+            loginErrorMsg.classList.remove('hidden');
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = "Sign In";
+        }
+    });
+}
+
+// Logout
+if (adminLogoutBtn) {
+    adminLogoutBtn.addEventListener('click', async () => {
+        await supabaseClient.auth.signOut();
+        adminDashboardSection.classList.add('hidden');
+        showToast("Logged out successfully");
+    });
+}
+
+// Refresh Dashboard
+const adminRefreshBtn = document.getElementById('admin-refresh-btn');
+if (adminRefreshBtn) {
+    adminRefreshBtn.addEventListener('click', () => {
+        const icon = adminRefreshBtn.querySelector('i');
+        icon.classList.add('fa-spin');
+        fetchAndRenderOrders().then(() => {
+            setTimeout(() => icon.classList.remove('fa-spin'), 500); // Keep spinning a bit for effect
+        });
+    });
+}
+
+// --- Functions ---
+
+async function checkSession() {
+    if (!supabaseClient) return null;
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    return session;
+}
+
+function openDashboard() {
+    adminDashboardSection.classList.remove('hidden');
+    fetchAndRenderOrders();
+}
+
+async function saveOrderToSupabase(orderData) {
+    if (!supabaseClient) {
+        console.warn("Supabase client not ready, cannot save order.");
+        return;
+    }
+
+    try {
+        const { error } = await supabaseClient
+            .from('orders') // Assuming table name is 'orders'
+            .insert([
+                {
+                    order_id: orderData.orderId,
+                    student_name: orderData.name,
+                    roll_no: orderData.rollNo,
+                    department: orderData.dept,
+                    transaction_id: orderData.txnId,
+                    total_amount: orderData.totalAmount,
+                    items: orderData.items,
+                    created_at: new Date().toISOString()
+                }
+            ]);
+
+        if (error) {
+            console.error("Error saving order to Supabase:", error);
+            alert("Error: " + (error.message || JSON.stringify(error)));
+        } else {
+            console.log("Order saved to Supabase successfully.");
+            // Feedback to user
+            showToast("Order recorded in Database!");
+        }
+    } catch (e) {
+        console.error("Unexpected error saving order:", e);
+        alert("Debug Error: Unexpected error saving order.");
+    }
+}
+
+async function fetchAndRenderOrders() {
+    if (!supabaseClient) return;
+
+    ordersContainer.innerHTML = '<div class="col-span-full text-center"><i class="fas fa-spinner fa-spin text-4xl text-blue-500"></i><p>Loading orders...</p></div>';
+
+    try {
+        // Calculate 24 hours ago
+        const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+        const { data: orders, error } = await supabaseClient
+            .from('orders')
+            .select('*')
+            .gt('created_at', oneDayAgo) // Filter: Created (Greater Than) 24 hours ago
+            .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        if (!orders || orders.length === 0) {
+            ordersContainer.innerHTML = '<div class="col-span-full text-center text-gray-500">No orders found.</div>';
+            return;
+        }
+
+        ordersContainer.innerHTML = orders.map(order => `
+            <div class="bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow border-l-4 border-blue-500 relative">
+                <div class="flex justify-between items-start mb-4">
+                    <div>
+                        <h3 class="text-xl font-bold text-gray-800">${order.student_name || 'Unknown'}</h3>
+                        <p class="text-sm text-gray-500">${order.roll_no || 'N/A'}</p>
+                    </div>
+                    <span class="bg-green-100 text-green-800 text-xs font-semibold px-2.5 py-0.5 rounded">PAID</span>
+                </div>
+                
+                <div class="mb-4">
+                    <p class="text-gray-600 text-sm"><span class="font-semibold">Dept:</span> ${order.department || 'N/A'}</p>
+                    <p class="text-gray-600 text-sm"><span class="font-semibold">Total:</span> ₹${order.total_amount}</p>
+                    <p class="text-gray-500 text-xs mt-1">${new Date(order.created_at).toLocaleString()}</p>
+                </div>
+
+                <div class="mt-4 pt-4 border-t border-gray-100 flex justify-between items-center">
+                    <span class="text-xs text-gray-400 font-mono">${order.order_id}</span>
+                    <button onclick="viewAdminOrderDetails('${order.id}')" class="text-blue-600 hover:text-blue-800 text-sm font-semibold">
+                        View Details <i class="fas fa-arrow-right ml-1"></i>
+                    </button>
+                </div>
+                
+                <!-- Hidden data for this order -->
+                <textarea id="data-order-${order.id}" class="hidden">${JSON.stringify(order.items)}</textarea>
+            </div>
+        `).join('');
+
+    } catch (err) {
+        console.error("Error fetching orders:", err);
+        ordersContainer.innerHTML = '<div class="col-span-full text-center text-red-500">Failed to load orders.</div>';
+    }
+}
+
+// Global function to view details
+window.viewAdminOrderDetails = function (dbId) {
+    const rawData = document.getElementById(`data-order-${dbId}`).value;
+    const items = JSON.parse(rawData);
+    const modal = document.getElementById('order-details-modal');
+    const content = document.getElementById('order-details-content');
+
+    // Populate modal
+    if (!items || items.length === 0) {
+        content.innerHTML = '<p class="text-center text-gray-500">No items in this order.</p>';
+    } else {
+        const listHtml = items.map(item => `
+            <div class="flex justify-between items-center bg-gray-50 p-3 rounded">
+                <div>
+                    <p class="font-semibold text-gray-800">${item.name}</p>
+                    <p class="text-xs text-gray-500">Qty: ${item.qty}</p>
+                </div>
+                <p class="font-bold text-gray-800">₹${item.price * item.qty}</p>
+            </div>
+        `).join('');
+
+        // Add total summary just in case
+        const total = items.reduce((sum, i) => sum + (i.price * i.qty), 0);
+
+        content.innerHTML = `
+            <div class="space-y-2">
+                ${listHtml}
+            </div>
+            <div class="mt-4 pt-4 border-t border-gray-200 flex justify-end">
+                <p class="text-lg font-bold">Total: ₹${total}</p>
+            </div>
+        `;
+    }
+
+    modal.classList.remove('hidden');
+}
+
+// Close Order Details Modal
+document.getElementById('close-order-details')?.addEventListener('click', () => {
+    document.getElementById('order-details-modal').classList.add('hidden');
+});
+
+// Close Dash on outside click (optional-ish, maybe just close on ESC)
+document.addEventListener('keydown', (e) => {
+    if (e.key === "Escape") {
+        document.getElementById('order-details-modal').classList.add('hidden');
+        document.getElementById('admin-login-modal').classList.add('hidden');
+        // Do not close dashboard on ESC, as it's a full page view overlay
+    }
+});
+
